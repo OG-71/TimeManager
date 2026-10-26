@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Time Manager & Schedule Tracker</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS (xlsx) for handling Excel file uploads -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                            900: '#312e81',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom scrollbar for schedule grid */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.05);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(99, 102, 241, 0.3);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(99, 102, 241, 0.5);
+        }
+        
+        .pulse-active {
+            box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7);
+            animation: pulse-ring 2s infinite;
+        }
+        @keyframes pulse-ring {
+            0% {
+                box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.6);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(99, 102, 241, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
+            }
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-full font-sans antialiased flex flex-col">
+
+    <!-- Header Navigation -->
+    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 bg-indigo-600/20 text-indigo-400 rounded-xl border border-indigo-500/30">
+                    <i data-lucide="clock" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg text-white tracking-tight">TimeManager <span class="text-xs font-normal text-indigo-400 bg-indigo-950 px-2 py-0.5 rounded-full border border-indigo-800">v2.0</span></h1>
+                    <p class="text-xs text-slate-400">Smart Schedule Bot & Tracker</p>
+                </div>
+            </div>
+
+            <!-- Controls / File Upload button -->
+            <div class="flex items-center space-x-3">
+                <label for="excel-upload" class="cursor-pointer flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-2 rounded-xl text-sm font-medium transition shadow-lg shadow-indigo-600/20">
+                    <i data-lucide="upload" class="w-4 h-4"></i>
+                    <span class="hidden sm:inline">Upload Schedule</span>
+                </label>
+                <input type="file" id="excel-upload" accept=".xlsx, .xls, .csv" class="hidden">
+
+                <button id="btn-reset-default" title="Reset to Default Schedule" class="p-2 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition border border-slate-700">
+                    <i data-lucide="rotate-ccw" class="w-5 h-5"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+        <!-- HERO BANNER: What should I be doing right now? -->
+        <section class="relative overflow-hidden rounded-3xl bg-gradient-to-r from-indigo-950 via-slate-900 to-purple-950 border border-indigo-500/20 shadow-2xl p-6 sm:p-8">
+            <div class="absolute -right-10 -bottom-10 w-72 h-72 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none"></div>
+            <div class="absolute -left-10 -top-10 w-72 h-72 bg-purple-600/10 rounded-full blur-3xl pointer-events-none"></div>
+
+            <div class="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+                <!-- Left Details -->
+                <div class="lg:col-span-7 space-y-4">
+                    <div class="flex items-center space-x-3 flex-wrap gap-y-2">
+                        <span id="live-day" class="px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                            Monday
+                        </span>
+                        <span id="live-clock" class="text-xs font-mono text-slate-300 bg-slate-800/80 px-3 py-1 rounded-full border border-slate-700">
+                            15:29:00
+                        </span>
+                        <span id="simulator-indicator" class="hidden px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                            ⚡ Time Simulation Mode Active
+                        </span>
+                    </div>
+
+                    <div>
+                        <p class="text-xs uppercase tracking-wider text-slate-400 font-medium mb-1">Right now you should be:</p>
+                        <div class="flex items-center space-x-3">
+                            <h2 id="current-task-name" class="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
+                                Rest n gradly
+                            </h2>
+                            <span id="task-badge" class="pulse-active px-3 py-1 rounded-xl text-xs font-bold uppercase tracking-wider bg-indigo-600 text-white shadow-lg">
+                                Active
+                            </span>
+                        </div>
+                    </div>
+
+                    <p id="current-task-desc" class="text-slate-300 text-sm max-w-xl">
+                        Taking a proper, quality rest period to recharge before moving to upcoming assignments.
+                    </p>
+
+                    <!-- Next Task Card -->
+                    <div class="flex items-center space-x-3 text-sm bg-slate-800/60 p-3 rounded-2xl border border-slate-700/60 max-w-md">
+                        <div class="p-2 rounded-xl bg-purple-500/10 text-purple-400">
+                            <i data-lucide="arrow-right-circle" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <span class="text-xs text-slate-400 block">Coming Up Next (at <span id="next-task-time">18:00</span>)</span>
+                            <span id="next-task-name" class="font-semibold text-slate-100">Assignments</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Countdown Widget -->
+                <div class="lg:col-span-5 flex flex-col items-center lg:items-end justify-center">
+                    <div class="bg-slate-800/80 backdrop-blur border border-slate-700 p-6 rounded-2xl w-full max-w-xs text-center space-y-2 shadow-xl">
+                        <span class="text-xs uppercase tracking-wider text-slate-400 font-semibold block">Time Remaining in Block</span>
+                        <div id="countdown-timer" class="text-3xl sm:text-4xl font-mono font-bold text-indigo-400 tracking-wider">
+                            00h 31m 00s
+                        </div>
+                        <!-- Progress bar -->
+                        <div class="w-full bg-slate-700 h-2 rounded-full overflow-hidden mt-3">
+                            <div id="countdown-progress" class="bg-gradient-to-r from-indigo-500 to-purple-500 h-full w-2/3 transition-all duration-1000"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SEARCH & SIMULATION TOOLBAR -->
+        <section class="bg-slate-800/50 backdrop-blur rounded-2xl border border-slate-700/80 p-4 space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                
+                <!-- Activity Search -->
+                <div class="md:col-span-6 relative">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                        <i data-lucide="search" class="w-4 h-4"></i>
+                    </div>
+                    <input type="text" id="search-input" placeholder="Search tasks (e.g., 'Class', 'STAT', 'Sleep', 'Pray')..." 
+                        class="w-full pl-9 pr-4 py-2 bg-slate-900 border border-slate-700 rounded-xl text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition">
+                </div>
+
+                <!-- View Filters & Simulation Toggle -->
+                <div class="md:col-span-6 flex items-center justify-end space-x-2">
+                    <button id="btn-view-today" class="px-3.5 py-2 bg-indigo-600 text-white rounded-xl text-xs font-semibold transition hover:bg-indigo-500 flex items-center space-x-1.5">
+                        <i data-lucide="calendar" class="w-4 h-4"></i>
+                        <span>Today's View</span>
+                    </button>
+                    <button id="btn-view-all" class="px-3.5 py-2 bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold transition hover:bg-slate-600 flex items-center space-x-1.5">
+                        <i data-lucide="grid" class="w-4 h-4"></i>
+                        <span>Full Week</span>
+                    </button>
+                    <button id="btn-toggle-simulator" class="px-3.5 py-2 bg-slate-700 text-amber-300 border border-amber-500/30 rounded-xl text-xs font-semibold transition hover:bg-slate-600 flex items-center space-x-1.5">
+                        <i data-lucide="sliders" class="w-4 h-4"></i>
+                        <span>Simulator</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Simulator Control Drawer (Hidden by Default) -->
+            <div id="simulator-drawer" class="hidden pt-3 border-t border-slate-700/60 grid grid-cols-1 sm:grid-cols-12 gap-4 items-center bg-slate-900/50 p-3 rounded-xl">
+                <div class="sm:col-span-3">
+                    <label class="text-xs font-medium text-slate-400 block mb-1">Select Simulated Day:</label>
+                    <select id="sim-day-select" class="w-full bg-slate-800 border border-slate-700 rounded-lg text-xs text-white p-2 focus:outline-none focus:border-indigo-500">
+                        <option value="Monday">Monday</option>
+                        <option value="Tuesday">Tuesday</option>
+                        <option value="Wednesday">Wednesday</option>
+                        <option value="Thursday">Thursday</option>
+                        <option value="Friday">Friday</option>
+                        <option value="Saturday">Saturday</option>
+                        <option value="Sunday">Sunday</option>
+                    </select>
+                </div>
+
+                <div class="sm:col-span-6">
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="text-xs font-medium text-slate-400">Simulated Time Slot:</label>
+                        <span id="sim-time-val" class="text-xs font-mono text-indigo-400 font-bold">14:00</span>
+                    </div>
+                    <input type="range" id="sim-time-slider" min="0" max="22" step="2" value="14" class="w-full accent-indigo-500 cursor-pointer">
+                </div>
+
+                <div class="sm:col-span-3 flex space-x-2 pt-2 sm:pt-0">
+                    <button id="btn-apply-sim" class="flex-1 bg-amber-600 hover:bg-amber-500 text-white py-2 rounded-lg text-xs font-semibold transition">
+                        Simulate
+                    </button>
+                    <button id="btn-reset-sim" class="bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-2 rounded-lg text-xs font-semibold transition">
+                        Real-time
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- MAIN SCHEDULE DISPLAY: GRID VIEW -->
+        <section id="grid-section" class="bg-slate-800/40 border border-slate-700/80 rounded-2xl p-4 overflow-hidden">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-base font-semibold text-white flex items-center gap-2">
+                    <i data-lucide="table" class="w-5 h-5 text-indigo-400"></i>
+                    <span>Weekly Timetable Matrix</span>
+                </h3>
+                <span class="text-xs text-slate-400">2-Hour Block System</span>
+            </div>
+
+            <!-- Scrollable Grid Table -->
+            <div class="overflow-x-auto pb-2">
+                <table class="w-full text-left border-collapse min-w-[900px]">
+                    <thead>
+                        <tr>
+                            <th class="p-3 text-xs font-semibold text-slate-400 uppercase tracking-wider bg-slate-900/80 rounded-tl-xl border-b border-slate-700 sticky left-0 z-20">
+                                Day / Time
+                            </th>
+                            <!-- Time headers generated dynamically -->
+                            <template id="header-time-template">
+                                <th class="p-3 text-xs font-semibold text-slate-300 text-center uppercase tracking-wider bg-slate-900/80 border-b border-slate-700"></th>
+                            </template>
+                        </tr>
+                    </thead>
+                    <tbody id="schedule-matrix-body" class="divide-y divide-slate-800 text-sm">
+                        <!-- Matrix rows populated dynamically -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- TODAY'S TIMELINE VIEW (Alternative View) -->
+        <section id="today-timeline-section" class="bg-slate-800/40 border border-slate-700/80 rounded-2xl p-6 hidden">
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h3 class="text-base font-semibold text-white flex items-center gap-2">
+                        <i data-lucide="list-todo" class="w-5 h-5 text-indigo-400"></i>
+                        <span>Today's Detailed Agenda</span>
+                    </h3>
+                    <p class="text-xs text-slate-400 mt-0.5">Chronological breakdown for <span id="timeline-day-title" class="font-semibold text-indigo-300">Today</span></p>
+                </div>
+            </div>
+
+            <!-- Timeline Cards -->
+            <div id="timeline-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <!-- Items populated dynamically -->
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="mt-auto border-t border-slate-800 bg-slate-950/60 py-4 text-center text-xs text-slate-500">
+        Time Manager Dashboard &bull; Smart Schedule Automation
+    </footer>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        // DEFAULT SCHEDULE DATA MATCHING TimeManager.xlsx
+        const defaultSchedule = {
+            times: ["00:00", "02:00", "04:00", "06:00", "08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00", "22:00"],
+            days: {
+                "Monday": ["Sleep", "Sleep", "Sleep", "Pray", "work", "Class", "Class", "Class", "Rest n gradly", "Assignments", "SMCM", "Networks"],
+                "Tuesday": ["Sleep", "Sleep", "Sleep", "Pray", "Class", "Class", "OS", "web", "Class", "Assignments", "SMCM", "philosophy"],
+                "Wednesday": ["Sleep", "Sleep", "Sleep", "Pray", "TME", "Class", "web", "Class", "Rest n gradly", "Assignments", "SMCM", "Networks"],
+                "Thursday": ["Sleep", "Sleep", "Sleep", "Pray", "work", "Class", "OS", "Class", "Rest n gradly", "Assignments", "SMCM", "philosophy"],
+                "Friday": ["Sleep", "Sleep", "Sleep", "Pray", "STAT", "Class", "TME", "OS", "Class", "Assignments", "STAT", "Networks"],
+                "Saturday": ["Sleep", "Sleep", "Pray", "Chores", "TME", "STAT", "STAT", "web", "OS", "cg", "cg", "philosophy"],
+                "Sunday": ["Sleep", "Pray", "Pray", "Chores", "Chores", "Washing", "Service", "Service", "Service", "Bible", "Bible", "Sleep"]
+            }
+        };
+
+        // Explanations/Descriptions for common tasks
+        const taskDescriptions = {
+            "Rest n gradly": "Taking a proper, quality rest period to recharge before moving to upcoming assignments.",
+            "Class": "Attending scheduled lectures and academic course modules.",
+            "Assignments": "Focusing on academic coursework, projects, and homework tasks.",
+            "Sleep": "Resting and sleeping for optimal health and mental clarity.",
+            "Pray": "Spiritual devotional time and prayer.",
+            "Chores": "Housework and maintaining personal living space.",
+            "Service": "Church service or community involvement activities.",
+            "Bible": "Personal Bible study and reflection.",
+            "STAT": "Statistics study session / coursework.",
+            "OS": "Operating Systems technical course study.",
+            "TME": "TME academic module / study.",
+            "SMCM": "SMCM module session or project work.",
+            "Networks": "Computer Networking coursework and practice.",
+            "web": "Web development practice or class project work.",
+            "philosophy": "Philosophy reading and study block.",
+            "work": "Professional work or duty block.",
+            "Washing": "Laundry and personal care time.",
+            "cg": "Small group / Community activity."
+        };
+
+        // Task color badges mapping
+        const taskColors = {
+            "Sleep": "bg-slate-800 text-slate-300 border-slate-700",
+            "Pray": "bg-amber-500/10 text-amber-400 border-amber-500/20",
+            "Class": "bg-blue-500/10 text-blue-400 border-blue-500/20",
+            "Assignments": "bg-indigo-500/10 text-indigo-400 border-indigo-500/20",
+            "Rest n gradly": "bg-purple-500/10 text-purple-400 border-purple-500/20",
+            "STAT": "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+            "Service": "bg-rose-500/10 text-rose-400 border-rose-500/20",
+            "Bible": "bg-amber-600/10 text-amber-300 border-amber-500/20",
+            "work": "bg-teal-500/10 text-teal-400 border-teal-500/20"
+        };
+
+        // App State
+        let currentSchedule = JSON.parse(JSON.stringify(defaultSchedule));
+        let isSimulationActive = false;
+        let simDay = "Monday";
+        let simHour = 14;
+        let searchQuery = "";
+        let activeView = "grid"; // 'grid' or 'today'
+
+        // DOM Elements
+        const liveClockEl = document.getElementById("live-clock");
+        const liveDayEl = document.getElementById("live-day");
+        const currentTaskNameEl = document.getElementById("current-task-name");
+        const currentTaskDescEl = document.getElementById("current-task-desc");
+        const nextTaskNameEl = document.getElementById("next-task-name");
+        const nextTaskTimeEl = document.getElementById("next-task-time");
+        const countdownTimerEl = document.getElementById("countdown-timer");
+        const countdownProgressEl = document.getElementById("countdown-progress");
+        const simulatorIndicatorEl = document.getElementById("simulator-indicator");
+
+        // Initialize Application
+        window.addEventListener("DOMContentLoaded", () => {
+            lucide.createIcons();
+            renderHeaderTimes();
+            renderGrid();
+            renderTimeline();
+            startClockLoop();
+            setupEventListeners();
+        });
+
+        // Render Matrix Table Headers (Times)
+        function renderHeaderTimes() {
+            const tableHeadRow = document.querySelector("thead tr");
+            // clear dynamic time headers if any
+            const existingTimeHeaders = tableHeadRow.querySelectorAll(".time-hdr");
+            existingTimeHeaders.forEach(el => el.remove());
+
+            currentSchedule.times.forEach(time => {
+                const th = document.createElement("th");
+                th.className = "time-hdr p-3 text-xs font-semibold text-slate-300 text-center uppercase tracking-wider bg-slate-900/80 border-b border-slate-700 min-w-[90px]";
+                th.textContent = time;
+                tableHeadRow.appendChild(th);
+            });
+        }
+
+        // Render Grid Matrix View
+        function renderGrid() {
+            const matrixBody = document.getElementById("schedule-matrix-body");
+            matrixBody.innerHTML = "";
+
+            const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+            
+            // Get current active day and hour slot
+            const { day: activeDay, slotIndex: activeSlotIndex } = getActiveDayAndSlot();
+
+            dayNames.forEach(day => {
+                const isCurrentDayRow = (day === activeDay);
+                const tr = document.createElement("tr");
+                tr.className = isCurrentDayRow ? "bg-indigo-950/20" : "hover:bg-slate-800/30 transition";
+
+                // Day Title Cell
+                const dayTd = document.createElement("td");
+                dayTd.className = `p-3 font-semibold text-xs sticky left-0 z-10 border-r border-slate-800 ${
+                    isCurrentDayRow ? "bg-slate-900 text-indigo-400" : "bg-slate-900/90 text-slate-300"
+                }`;
+                dayTd.innerHTML = `
+                    <div class="flex items-center space-x-2">
+                        ${isCurrentDayRow ? '<span class="w-2 h-2 rounded-full bg-indigo-500 inline-block"></span>' : ''}
+                        <span>${day}</span>
+                    </div>
+                `;
+                tr.appendChild(dayTd);
+
+                // Time Slots Cells
+                const tasks = currentSchedule.days[day] || [];
+                tasks.forEach((task, idx) => {
+                    const td = document.createElement("td");
+                    const isCurrentSlotCell = isCurrentDayRow && (idx === activeSlotIndex);
+                    
+                    // Search matching check
+                    const isSearchMatch = searchQuery && task.toLowerCase().includes(searchQuery.toLowerCase());
+
+                    let cellStyle = "p-2.5 text-center text-xs border-r border-b border-slate-800/60 transition ";
+                    
+                    if (isCurrentSlotCell) {
+                        cellStyle += "bg-indigo-600 text-white font-bold shadow-inner pulse-active rounded-lg ";
+                    } else if (isSearchMatch) {
+                        cellStyle += "bg-amber-500/20 text-amber-200 border border-amber-500/40 font-bold ";
+                    } else {
+                        cellStyle += "text-slate-300 ";
+                    }
+
+                    td.className = cellStyle;
+
+                    // Task pill or container
+                    const taskBadgeClass = taskColors[task] || "bg-slate-800/80 text-slate-300 border-slate-700/50";
+                    
+                    td.innerHTML = `
+                        <div class="py-1 px-2 rounded-lg border text-xs truncate max-w-[110px] mx-auto ${
+                            isCurrentSlotCell ? 'bg-indigo-700 border-indigo-400 text-white' : taskBadgeClass
+                        }" title="${task}">
+                            ${task}
+                        </div>
+                    `;
+                    tr.appendChild(td);
+                });
+
+                matrixBody.appendChild(tr);
+            });
+        }
+
+        // Render Timeline Cards View
+        function renderTimeline() {
+            const container = document.getElementById("timeline-container");
+            container.innerHTML = "";
+
+            const { day: activeDay, slotIndex: activeSlotIndex } = getActiveDayAndSlot();
+            document.getElementById("timeline-day-title").textContent = activeDay;
+
+            const tasks = currentSchedule.days[activeDay] || [];
+
+            tasks.forEach((task, idx) => {
+                const startTime = currentSchedule.times[idx];
+                const endTime = currentSchedule.times[(idx + 1) % currentSchedule.times.length] || "24:00";
+                const isActive = (idx === activeSlotIndex);
+
+                const isSearchMatch = searchQuery && task.toLowerCase().includes(searchQuery.toLowerCase());
+
+                const card = document.createElement("div");
+                card.className = `p-4 rounded-2xl border transition relative overflow-hidden ${
+                    isActive 
+                        ? "bg-gradient-to-br from-indigo-900/60 to-slate-900 border-indigo-500 shadow-xl ring-1 ring-indigo-500" 
+                        : isSearchMatch 
+                        ? "bg-amber-950/20 border-amber-500/50" 
+                        : "bg-slate-800/60 border-slate-700/80 hover:border-slate-600"
+                }`;
+
+                card.innerHTML = `
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs font-mono font-medium ${isActive ? 'text-indigo-300' : 'text-slate-400'}">
+                            ${startTime} - ${endTime}
+                        </span>
+                        ${isActive ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-indigo-500 text-white">Current</span>' : ''}
+                    </div>
+                    <h4 class="text-lg font-bold ${isActive ? 'text-white' : 'text-slate-200'}">${task}</h4>
+                    <p class="text-xs text-slate-400 mt-1 line-clamp-2">
+                        ${taskDescriptions[task] || "Scheduled daily activity block."}
+                    </p>
+                `;
+
+                container.appendChild(card);
+            });
+        }
+
+        // Calculate Active Day and Active Slot Index based on real time or simulator
+        function getActiveDayAndSlot() {
+            let dayName = "Monday";
+            let hours = 0;
+            let minutes = 0;
+            let seconds = 0;
+
+            if (isSimulationActive) {
+                dayName = simDay;
+                hours = simHour;
+                minutes = 0;
+                seconds = 0;
+            } else {
+                const now = new Date();
+                const dayIndex = now.getDay(); // 0 is Sunday
+                const daysMap = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+                dayName = daysMap[dayIndex];
+                hours = now.getHours();
+                minutes = now.getMinutes();
+                seconds = now.getSeconds();
+            }
+
+            // Calculate 2-hour slot index: 00:00=0, 02:00=1, 04:00=2, etc.
+            let slotIndex = Math.floor(hours / 2);
+            if (slotIndex >= 12) slotIndex = 11;
+
+            return { day: dayName, slotIndex, hours, minutes, seconds };
+        }
+
+        // Real-time Update Loop
+        function startClockLoop() {
+            setInterval(() => {
+                updateUIState();
+            }, 1000);
+            updateUIState(); // Immediate execution
+        }
+
+        function updateUIState() {
+            const now = new Date();
+            const { day, slotIndex, hours, minutes, seconds } = getActiveDayAndSlot();
+
+            // 1. Update Header Clock & Day Display
+            if (isSimulationActive) {
+                liveClockEl.textContent = `${String(simHour).padStart(2, '0')}:00:00 (Simulated)`;
+                liveDayEl.textContent = simDay;
+                simulatorIndicatorEl.classList.remove("hidden");
+            } else {
+                liveClockEl.textContent = now.toLocaleTimeString();
+                liveDayEl.textContent = day;
+                simulatorIndicatorEl.classList.add("hidden");
+            }
+
+            // 2. Current Task & Description
+            const dayTasks = currentSchedule.days[day] || [];
+            const currentTask = dayTasks[slotIndex] || "Free Time";
+            currentTaskNameEl.textContent = currentTask;
+            currentTaskDescEl.textContent = taskDescriptions[currentTask] || "Scheduled activity block.";
+
+            // 3. Next Task Info
+            const nextSlotIndex = (slotIndex + 1) % 12;
+            const nextTask = dayTasks[nextSlotIndex] || "Sleep";
+            const nextTime = currentSchedule.times[nextSlotIndex];
+            nextTaskNameEl.textContent = nextTask;
+            nextTaskTimeEl.textContent = nextTime;
+
+            // 4. Countdown to Next 2-Hour Block
+            let remMinutes, remSeconds;
+            if (isSimulationActive) {
+                remMinutes = 119;
+                remSeconds = 59;
+            } else {
+                const minutesInCurrentSlot = (hours % 2) * 60 + minutes;
+                const totalSlotSeconds = 120 * 60; // 2 hours = 7200s
+                const passedSeconds = minutesInCurrentSlot * 60 + seconds;
+                const remainingSecondsTotal = totalSlotSeconds - passedSeconds;
+
+                const remHours = Math.floor(remainingSecondsTotal / 3600);
+                remMinutes = Math.floor((remainingSecondsTotal % 3600) / 60);
+                remSeconds = remainingSecondsTotal % 60;
+
+                const progressPercent = ((passedSeconds / totalSlotSeconds) * 100).toFixed(1);
+                countdownProgressEl.style.width = `${progressPercent}%`;
+
+                countdownTimerEl.textContent = `${String(remHours).padStart(2, '0')}h ${String(remMinutes).padStart(2, '0')}m ${String(remSeconds).padStart(2, '0')}s`;
+            }
+
+            // Refresh highlights if slot changes
+            renderGrid();
+            renderTimeline();
+        }
+
+        // Setup Event Listeners
+        function setupEventListeners() {
+            // Search Input
+            document.getElementById("search-input").addEventListener("input", (e) => {
+                searchQuery = e.target.value.trim();
+                renderGrid();
+                renderTimeline();
+            });
+
+            // View Toggles
+            const btnGrid = document.getElementById("btn-view-all");
+            const btnToday = document.getElementById("btn-view-today");
+            const gridSection = document.getElementById("grid-section");
+            const todaySection = document.getElementById("today-timeline-section");
+
+            btnGrid.addEventListener("click", () => {
+                activeView = "grid";
+                gridSection.classList.remove("hidden");
+                todaySection.classList.add("hidden");
+                btnGrid.className = "px-3.5 py-2 bg-indigo-600 text-white rounded-xl text-xs font-semibold transition hover:bg-indigo-500 flex items-center space-x-1.5";
+                btnToday.className = "px-3.5 py-2 bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold transition hover:bg-slate-600 flex items-center space-x-1.5";
+            });
+
+            btnToday.addEventListener("click", () => {
+                activeView = "today";
+                gridSection.classList.add("hidden");
+                todaySection.classList.remove("hidden");
+                btnToday.className = "px-3.5 py-2 bg-indigo-600 text-white rounded-xl text-xs font-semibold transition hover:bg-indigo-500 flex items-center space-x-1.5";
+                btnGrid.className = "px-3.5 py-2 bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold transition hover:bg-slate-600 flex items-center space-x-1.5";
+            });
+
+            // Simulator Drawer Toggle
+            const btnToggleSim = document.getElementById("btn-toggle-simulator");
+            const simDrawer = document.getElementById("simulator-drawer");
+            btnToggleSim.addEventListener("click", () => {
+                simDrawer.classList.toggle("hidden");
+            });
+
+            // Simulator Controls
+            const simTimeSlider = document.getElementById("sim-time-slider");
+            const simTimeVal = document.getElementById("sim-time-val");
+            const simDaySelect = document.getElementById("sim-day-select");
+
+            simTimeSlider.addEventListener("input", (e) => {
+                const val = String(e.target.value).padStart(2, '0');
+                simTimeVal.textContent = `${val}:00`;
+            });
+
+            document.getElementById("btn-apply-sim").addEventListener("click", () => {
+                isSimulationActive = true;
+                simDay = simDaySelect.value;
+                simHour = parseInt(simTimeSlider.value);
+                updateUIState();
+            });
+
+            document.getElementById("btn-reset-sim").addEventListener("click", () => {
+                isSimulationActive = false;
+                updateUIState();
+            });
+
+            // File Upload Listener (Excel / CSV Parse)
+            const fileInput = document.getElementById("excel-upload");
+            fileInput.addEventListener("change", handleFileUpload);
+
+            // Reset Schedule to Default
+            document.getElementById("btn-reset-default").addEventListener("click", () => {
+                currentSchedule = JSON.parse(JSON.stringify(defaultSchedule));
+                renderHeaderTimes();
+                renderGrid();
+                renderTimeline();
+                updateUIState();
+                alert("Schedule successfully reset to default!");
+            });
+        }
+
+        // Handle Excel (.xlsx) file parse using SheetJS
+        function handleFileUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                try {
+                    const data = new Uint8Array(event.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    
+                    // Read first sheet
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+                    if (json.length < 2) {
+                        alert("Invalid file structure. Sheet must contain header row and day rows.");
+                        return;
+                    }
+
+                    // Parse times from header (Row 0, index 1+)
+                    const headerRow = json[0];
+                    const extractedTimes = headerRow.slice(1).map(t => String(t).trim());
+
+                    // Parse days data
+                    const extractedDays = {};
+                    for (let i = 1; i < json.length; i++) {
+                        const row = json[i];
+                        if (!row || !row[0]) continue;
+                        const dayName = String(row[0]).trim();
+                        const tasks = row.slice(1).map(task => String(task || "Free").trim());
+                        
+                        if (dayName) {
+                            extractedDays[dayName] = tasks;
+                        }
+                    }
+
+                    if (Object.keys(extractedDays).length > 0 && extractedTimes.length > 0) {
+                        currentSchedule = {
+                            times: extractedTimes,
+                            days: extractedDays
+                        };
+                        renderHeaderTimes();
+                        renderGrid();
+                        renderTimeline();
+                        updateUIState();
+                        alert("Schedule successfully imported from Excel file!");
+                    } else {
+                        alert("Could not parse valid schedule data from file.");
+                    }
+                } catch (err) {
+                    console.error("Error parsing Excel:", err);
+                    alert("Error reading Excel file. Make sure it's a valid .xlsx or .csv schedule file.");
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+    </script>
+</body>
+</html>
